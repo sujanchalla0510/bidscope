@@ -1,0 +1,12 @@
+# Compiled binaries
+/bidscope
+*.exe
+*.out
+
+# Test artifacts
+*.test
+coverage.out
+coverage.html
+
+# Build output
+dist/
