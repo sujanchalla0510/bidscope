@@ -1,0 +1,6 @@
+{"id": "syn-001", "at": 2, "imp": [{"id": "i1", "banner": {"format": [{"w": 300, "h": 250}]}, "bidfloor": 0.50}], "site": {"domain": "synthetic-news.test"}, "device": {"os": "android", "ip": "203.0.113.10", "ua": "SyntheticAgent/1.0"}, "user": {"id": "syn-user-1"}}
+{"id": "syn-002", "at": 1, "imp": [{"id": "i1", "video": {"mimes": ["video/mp4"]}, "bidfloor": 2.00, "rwdd": 1}], "app": {"bundle": "com.synthetic.app"}, "device": {"os": "ios", "ifa": "00000000-0000-0000-0000-000000000000"}, "regs": {"gdpr": 1, "gpp": "DBABMA~SYNTHETIC"}}
+
+{"id": "syn-003", "at": 2, "imp": [{"id": "i1", "native": {"request": "{}"}}], "device": {"os": "windows"}}
+this line is not JSON and must be counted as malformed
+{"id": "syn-004", "at": 2, "imp": [{"id": "i1", "banner": {"format": [{"w": 728, "h": 90}]}}], "site": {"domain": "synthetic-blog.test"}, "source": {"fd": 1, "ext": {"schain": {"complete": 1, "ver": "1.0", "nodes": [{"asi": "synthetic-ssp.test", "sid": "1", "hp": 1}]}}}}
