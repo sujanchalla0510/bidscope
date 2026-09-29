@@ -6,11 +6,15 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 
+	"github.com/sujanchalla0510/bidscope/internal/ingest"
 	"github.com/sujanchalla0510/bidscope/internal/version"
 )
 
@@ -77,9 +81,101 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	// M1 scaffold: the ingest + analysis engine lands in M2. Fail loudly
-	// (exit 1) so scripts never mistake a stub run for a real profile.
-	fmt.Fprintln(stderr, "bidscope: the profiling engine is not implemented yet (lands in M2 — ingest + parsing).")
-	fmt.Fprintln(stderr, "Run 'bidscope -version' to verify the install, or see the roadmap at https://github.com/sujanchalla0510/bidscope.")
+	if cfg.Input != "" {
+		return runProfile(cfg, stdout, stderr)
+	}
+	if cfg.Generate {
+		// M7 synthetic generator: flag is parsed, engine not built yet.
+		fmt.Fprintln(stderr, "bidscope: --generate lands in M7 (synthetic generator).")
+		return 1
+	}
+
+	// No input and no --generate: nothing to do. Fail loudly (exit 1) so
+	// scripts never mistake an empty run for a successful profile.
+	fmt.Fprintln(stderr, "bidscope: no input — pass -in <file.jsonl> (or '-' for stdin).")
+	usage(stderr)
 	return 1
+}
+
+// profileResult is the M2 read-through summary emitted by runProfile. The
+// analysis engine (signal completeness, mix, quality) lands in M3–M6 on top
+// of this same ingest core.
+type profileResult struct {
+	Input     string         `json:"input"`
+	Lines     int            `json:"lines"`
+	Parsed    int            `json:"parsed"`
+	Blank     int            `json:"blank"`
+	Malformed int            `json:"malformed"`
+	Versions  map[string]int `json:"versions"`
+}
+
+// runProfile streams the input through the ingest reader and reports the
+// read accounting plus the OpenRTB version mix. Exit 0 on success, 1 on
+// read failure.
+func runProfile(cfg Config, stdout, stderr io.Writer) int {
+	s, err := ingest.Open(cfg.Input)
+	if err != nil {
+		fmt.Fprintf(stderr, "bidscope: %v\n", err)
+		return 1
+	}
+	defer s.Close()
+
+	for {
+		_, err := s.Next()
+		switch {
+		case err == nil:
+			// counted inside the stream
+		case errors.Is(err, io.EOF):
+			goto done
+		case ingest.AsLineError(err):
+			continue // malformed lines are skipped; Stats keeps count
+		default:
+			fmt.Fprintf(stderr, "bidscope: %v\n", err)
+			return 1
+		}
+	}
+done:
+	st := s.Stats()
+	res := profileResult{
+		Input:     cfg.Input,
+		Lines:     st.Lines,
+		Parsed:    st.Parsed,
+		Blank:     st.Blank,
+		Malformed: st.Malformed,
+		Versions:  s.VersionMix(),
+	}
+
+	if cfg.JSONOutput {
+		enc := json.NewEncoder(stdout)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(res); err != nil {
+			fmt.Fprintf(stderr, "bidscope: encode output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "bidscope: parsed %d bid request(s) from %s", res.Parsed, res.Input)
+	switch {
+	case res.Malformed > 0 && res.Blank > 0:
+		fmt.Fprintf(&b, " (%d malformed line(s) skipped, %d blank line(s) ignored)", res.Malformed, res.Blank)
+	case res.Malformed > 0:
+		fmt.Fprintf(&b, " (%d malformed line(s) skipped)", res.Malformed)
+	case res.Blank > 0:
+		fmt.Fprintf(&b, " (%d blank line(s) ignored)", res.Blank)
+	}
+	fmt.Fprintln(&b)
+	keys := make([]string, 0, len(res.Versions))
+	for k := range res.Versions {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, 0, len(keys))
+	for _, k := range keys {
+		pairs = append(pairs, fmt.Sprintf("%s=%d", k, res.Versions[k]))
+	}
+	fmt.Fprintf(&b, "OpenRTB versions: %s\n", strings.Join(pairs, ", "))
+	fmt.Fprint(stdout, b.String())
+	return 0
 }
