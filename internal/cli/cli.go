@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/sujanchalla0510/bidscope/internal/ingest"
+	"github.com/sujanchalla0510/bidscope/internal/signals"
 	"github.com/sujanchalla0510/bidscope/internal/version"
 )
 
@@ -97,9 +98,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	return 1
 }
 
-// profileResult is the M2 read-through summary emitted by runProfile. The
-// analysis engine (signal completeness, mix, quality) lands in M3–M6 on top
-// of this same ingest core.
+// profileResult is the M3 profiling summary: ingest accounting, the
+// OpenRTB version mix, and the signal-completeness report with its
+// composite signal score.
 type profileResult struct {
 	Input     string         `json:"input"`
 	Lines     int            `json:"lines"`
@@ -107,11 +108,12 @@ type profileResult struct {
 	Blank     int            `json:"blank"`
 	Malformed int            `json:"malformed"`
 	Versions  map[string]int `json:"versions"`
+	Signals   signals.Report `json:"signals"`
 }
 
-// runProfile streams the input through the ingest reader and reports the
-// read accounting plus the OpenRTB version mix. Exit 0 on success, 1 on
-// read failure.
+// runProfile streams the input through the ingest reader, folds every bid
+// request into the signal-completeness engine, and reports the results.
+// Exit 0 on success, 1 on read failure.
 func runProfile(cfg Config, stdout, stderr io.Writer) int {
 	s, err := ingest.Open(cfg.Input)
 	if err != nil {
@@ -120,11 +122,12 @@ func runProfile(cfg Config, stdout, stderr io.Writer) int {
 	}
 	defer s.Close()
 
+	eng := signals.NewEngine()
 	for {
-		_, err := s.Next()
+		br, err := s.Next()
 		switch {
 		case err == nil:
-			// counted inside the stream
+			eng.Add(br)
 		case errors.Is(err, io.EOF):
 			goto done
 		case ingest.AsLineError(err):
@@ -143,6 +146,7 @@ done:
 		Blank:     st.Blank,
 		Malformed: st.Malformed,
 		Versions:  s.VersionMix(),
+		Signals:   eng.Report(),
 	}
 
 	if cfg.JSONOutput {
@@ -176,6 +180,14 @@ done:
 		pairs = append(pairs, fmt.Sprintf("%s=%d", k, res.Versions[k]))
 	}
 	fmt.Fprintf(&b, "OpenRTB versions: %s\n", strings.Join(pairs, ", "))
+
+	fmt.Fprintln(&b, "\nSignal completeness:")
+	fmt.Fprintln(&b, "  signal         present   fill")
+	for _, sig := range res.Signals.Signals {
+		fmt.Fprintf(&b, "  %-14s %4d/%-4d  %5.1f%%\n",
+			sig.Label, sig.Present, sig.Total, sig.FillRate*100)
+	}
+	fmt.Fprintf(&b, "  signal score: %.1f/100\n", res.Signals.Score)
 	fmt.Fprint(stdout, b.String())
 	return 0
 }

@@ -60,6 +60,18 @@ func TestProfileInput(t *testing.T) {
 	if !strings.Contains(stdout, "1 malformed line(s) skipped") {
 		t.Fatalf("stdout = %q, want malformed accounting", stdout)
 	}
+	// M3 signal completeness: table + composite score on the sample.
+	// Fixture fill rates: os 3/4, ip 1/4, user.id 1/4, inventory.id 3/4,
+	// geo 0, consent 1/4, schain 1/4, eids 0 -> score 31.3.
+	if !strings.Contains(stdout, "Signal completeness:") {
+		t.Fatalf("stdout = %q, want signal table", stdout)
+	}
+	if !strings.Contains(stdout, "signal score: 31.3/100") {
+		t.Fatalf("stdout = %q, want signal score 31.3", stdout)
+	}
+	if !strings.Contains(stdout, "device.os") || !strings.Contains(stdout, "75.0%") {
+		t.Fatalf("stdout = %q, want device.os row at 75.0%%", stdout)
+	}
 }
 
 func TestProfileInputJSON(t *testing.T) {
@@ -67,7 +79,7 @@ func TestProfileInputJSON(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
-	for _, want := range []string{`"parsed":4`, `"malformed":1`, `"2.6":1`} {
+	for _, want := range []string{`"parsed":4`, `"malformed":1`, `"2.6":1`, `"signals"`, `"score":31.3`, `"id":"device.os"`, `"fill_rate":0.75`} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("json stdout = %q, want %s", stdout, want)
 		}

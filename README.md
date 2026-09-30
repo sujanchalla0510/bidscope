@@ -34,8 +34,8 @@ the box. All sample fixtures in this repo are synthetic.
 Early build — v0.1 target:
 
 - [x] **M1** — scaffold: Go module, CLI skeleton, CI, Apache-2.0 license
-- [ ] **M2** — ingest: streaming JSONL reader (gzip), OpenRTB 2.5/2.6 structs
-- [ ] **M3** — signal completeness engine
+- [x] **M2** — ingest: streaming JSONL reader (gzip), OpenRTB 2.5/2.6 structs
+- [x] **M3** — signal completeness engine (fill-rate table + composite signal score, text and `--json`)
 - [ ] **M4** — mix analysis
 - [ ] **M5** — quality signals
 - [ ] **M6** — biddable-QPS estimate + HTML report → **v0.1, public launch**
