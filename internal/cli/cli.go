@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/sujanchalla0510/bidscope/internal/ingest"
+	"github.com/sujanchalla0510/bidscope/internal/mix"
 	"github.com/sujanchalla0510/bidscope/internal/signals"
 	"github.com/sujanchalla0510/bidscope/internal/version"
 )
@@ -98,9 +99,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	return 1
 }
 
-// profileResult is the M3 profiling summary: ingest accounting, the
-// OpenRTB version mix, and the signal-completeness report with its
-// composite signal score.
+// profileResult is the M3+M4 profiling summary: ingest accounting, the
+// OpenRTB version mix, the signal-completeness report with its composite
+// signal score, and the inventory mix analysis.
 type profileResult struct {
 	Input     string         `json:"input"`
 	Lines     int            `json:"lines"`
@@ -109,6 +110,7 @@ type profileResult struct {
 	Malformed int            `json:"malformed"`
 	Versions  map[string]int `json:"versions"`
 	Signals   signals.Report `json:"signals"`
+	Mix       mix.Report     `json:"mix"`
 }
 
 // runProfile streams the input through the ingest reader, folds every bid
@@ -123,11 +125,13 @@ func runProfile(cfg Config, stdout, stderr io.Writer) int {
 	defer s.Close()
 
 	eng := signals.NewEngine()
+	mixEng := mix.NewEngine()
 	for {
 		br, err := s.Next()
 		switch {
 		case err == nil:
 			eng.Add(br)
+			mixEng.Add(br)
 		case errors.Is(err, io.EOF):
 			goto done
 		case ingest.AsLineError(err):
@@ -147,6 +151,7 @@ done:
 		Malformed: st.Malformed,
 		Versions:  s.VersionMix(),
 		Signals:   eng.Report(),
+		Mix:       mixEng.Report(),
 	}
 
 	if cfg.JSONOutput {
@@ -188,6 +193,36 @@ done:
 			sig.Label, sig.Present, sig.Total, sig.FillRate*100)
 	}
 	fmt.Fprintf(&b, "  signal score: %.1f/100\n", res.Signals.Score)
+
+	mx := res.Mix
+	fmt.Fprintf(&b, "\nMix analysis (%d request(s), %d impression(s)):\n", mx.Requests, mx.Impressions)
+	fmt.Fprintf(&b, "  inventory: %d site (%.1f%%), %d app (%.1f%%)\n",
+		mx.Site, mx.SiteShare*100, mx.App, mx.AppShare*100)
+	fmt.Fprintf(&b, "  formats:   %s\n", joinItems(mx.Formats))
+	fmt.Fprintf(&b, "  top os:    %s\n", joinItems(mx.TopOS))
+	fmt.Fprintf(&b, "  top geo:   %s\n", joinItems(mx.TopCountries))
+	fmt.Fprintf(&b, "  devices:   %s\n", joinItems(mx.DeviceTypes))
+	fmt.Fprintf(&b, "  pmp: %.1f%% of imps carry pmp, %.1f%% carry deals, %.1f%% private auction\n",
+		mx.PMPCoverage*100, mx.DealCoverage*100, mx.PrivateShare*100)
+	if mx.BidFloors > 0 {
+		fmt.Fprintf(&b, "  bid floors (n=%d): median %.2f, p90 %.2f\n",
+			mx.BidFloors, mx.FloorMedian, mx.FloorP90)
+	} else {
+		fmt.Fprintln(&b, "  bid floors: none set")
+	}
 	fmt.Fprint(stdout, b.String())
 	return 0
+}
+
+// joinItems renders a distribution table as "label 12.3% (n), …". An empty
+// table renders as "—" so missing attributes read as missing, not zero.
+func joinItems(items []mix.Item) string {
+	if len(items) == 0 {
+		return "—"
+	}
+	parts := make([]string, 0, len(items))
+	for _, it := range items {
+		parts = append(parts, fmt.Sprintf("%s %.1f%% (%d)", it.Label, it.Share*100, it.Count))
+	}
+	return strings.Join(parts, ", ")
 }

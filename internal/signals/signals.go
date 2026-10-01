@@ -35,14 +35,14 @@ type SignalID string
 
 // The eight tracked signals, in display order.
 const (
-	DeviceOS     SignalID = "device.os"
-	DeviceIP     SignalID = "device.ip"
-	UserID       SignalID = "user.id"
-	InventoryID  SignalID = "inventory.id"
-	Geo          SignalID = "geo"
-	Consent      SignalID = "consent"
-	SChain       SignalID = "schain"
-	EIDs         SignalID = "eids"
+	DeviceOS    SignalID = "device.os"
+	DeviceIP    SignalID = "device.ip"
+	UserID      SignalID = "user.id"
+	InventoryID SignalID = "inventory.id"
+	Geo         SignalID = "geo"
+	Consent     SignalID = "consent"
+	SChain      SignalID = "schain"
+	EIDs        SignalID = "eids"
 )
 
 // Definition describes one signal: its id, a human-readable label, and
