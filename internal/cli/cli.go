@@ -16,6 +16,7 @@ import (
 
 	"github.com/sujanchalla0510/bidscope/internal/ingest"
 	"github.com/sujanchalla0510/bidscope/internal/mix"
+	"github.com/sujanchalla0510/bidscope/internal/quality"
 	"github.com/sujanchalla0510/bidscope/internal/signals"
 	"github.com/sujanchalla0510/bidscope/internal/version"
 )
@@ -99,9 +100,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	return 1
 }
 
-// profileResult is the M3+M4 profiling summary: ingest accounting, the
+// profileResult is the M3+M4+M5 profiling summary: ingest accounting, the
 // OpenRTB version mix, the signal-completeness report with its composite
-// signal score, and the inventory mix analysis.
+// signal score, the inventory mix analysis, and the quality-signal report.
 type profileResult struct {
 	Input     string         `json:"input"`
 	Lines     int            `json:"lines"`
@@ -111,6 +112,7 @@ type profileResult struct {
 	Versions  map[string]int `json:"versions"`
 	Signals   signals.Report `json:"signals"`
 	Mix       mix.Report     `json:"mix"`
+	Quality   quality.Report `json:"quality"`
 }
 
 // runProfile streams the input through the ingest reader, folds every bid
@@ -126,12 +128,14 @@ func runProfile(cfg Config, stdout, stderr io.Writer) int {
 
 	eng := signals.NewEngine()
 	mixEng := mix.NewEngine()
+	qEng := quality.NewEngine()
 	for {
 		br, err := s.Next()
 		switch {
 		case err == nil:
 			eng.Add(br)
 			mixEng.Add(br)
+			qEng.Add(br)
 		case errors.Is(err, io.EOF):
 			goto done
 		case ingest.AsLineError(err):
@@ -152,6 +156,7 @@ done:
 		Versions:  s.VersionMix(),
 		Signals:   eng.Report(),
 		Mix:       mixEng.Report(),
+		Quality:   qEng.Report(),
 	}
 
 	if cfg.JSONOutput {
@@ -209,6 +214,28 @@ done:
 			mx.BidFloors, mx.FloorMedian, mx.FloorP90)
 	} else {
 		fmt.Fprintln(&b, "  bid floors: none set")
+	}
+
+	q := res.Quality
+	fmt.Fprintln(&b, "\nQuality signals:")
+	fmt.Fprintf(&b, "  duplicates: %d exact (%d group(s)), %d near-duplicate (%d group(s)), %d reused request id(s)\n",
+		q.ExactDuplicates, q.ExactDuplicateGroups, q.NearDuplicates, q.NearDuplicateGroups, q.DuplicateIDs)
+	fmt.Fprintf(&b, "  datacenter IPs: %d (%.1f%%)\n", q.DatacenterIPs, q.DatacenterIPShare*100)
+	fmt.Fprintf(&b, "  user agents: %d missing, %d suspicious, %d ua/os mismatch; top UA share %.1f%%\n",
+		q.MissingUA, q.SuspiciousUA, q.UAOSMismatch, q.TopUAShare*100)
+	if q.TMaxDistinct > 0 {
+		fmt.Fprintf(&b, "  tmax: %d unset, median %.0f ms (%d distinct)\n",
+			q.TMaxUnset, q.TMaxMedian, q.TMaxDistinct)
+	} else {
+		fmt.Fprintf(&b, "  tmax: %d unset (no timeouts set)\n", q.TMaxUnset)
+	}
+	if len(q.RedFlags) == 0 {
+		fmt.Fprintln(&b, "  red flags: none")
+	} else {
+		fmt.Fprintln(&b, "  red flags:")
+		for _, f := range q.RedFlags {
+			fmt.Fprintf(&b, "    [%s] %s: %s\n", f.Severity, f.Code, f.Detail)
+		}
 	}
 	fmt.Fprint(stdout, b.String())
 	return 0

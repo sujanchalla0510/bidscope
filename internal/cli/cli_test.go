@@ -72,6 +72,26 @@ func TestProfileInput(t *testing.T) {
 	if !strings.Contains(stdout, "device.os") || !strings.Contains(stdout, "75.0%") {
 		t.Fatalf("stdout = %q, want device.os row at 75.0%%", stdout)
 	}
+	// M5 quality signals: no duplicates, no datacenter IPs (fixture uses
+	// TEST-NET addresses), 3 missing UAs, all tmax unset -> red flags.
+	if !strings.Contains(stdout, "Quality signals:") {
+		t.Fatalf("stdout = %q, want quality section", stdout)
+	}
+	if !strings.Contains(stdout, "duplicates: 0 exact (0 group(s)), 0 near-duplicate (0 group(s)), 0 reused request id(s)") {
+		t.Fatalf("stdout = %q, want zero duplication", stdout)
+	}
+	if !strings.Contains(stdout, "datacenter IPs: 0 (0.0%)") {
+		t.Fatalf("stdout = %q, want zero datacenter IPs", stdout)
+	}
+	if !strings.Contains(stdout, "3 missing, 0 suspicious, 0 ua/os mismatch") {
+		t.Fatalf("stdout = %q, want UA anomaly counts", stdout)
+	}
+	if !strings.Contains(stdout, "tmax: 4 unset (no timeouts set)") {
+		t.Fatalf("stdout = %q, want tmax accounting", stdout)
+	}
+	if !strings.Contains(stdout, "[warn] missing-ua") || !strings.Contains(stdout, "[warn] no-tmax") {
+		t.Fatalf("stdout = %q, want missing-ua and no-tmax red flags", stdout)
+	}
 }
 
 func TestProfileInputJSON(t *testing.T) {
@@ -79,7 +99,7 @@ func TestProfileInputJSON(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
-	for _, want := range []string{`"parsed":4`, `"malformed":1`, `"2.6":1`, `"signals"`, `"score":31.3`, `"id":"device.os"`, `"fill_rate":0.75`} {
+	for _, want := range []string{`"parsed":4`, `"malformed":1`, `"2.6":1`, `"signals"`, `"score":31.3`, `"id":"device.os"`, `"fill_rate":0.75`, `"quality"`, `"exact_duplicates":0`, `"missing_ua":3`, `"tmax_unset":4`, `"red_flags"`} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("json stdout = %q, want %s", stdout, want)
 		}
