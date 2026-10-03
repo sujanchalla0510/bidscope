@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Generate a synthetic SSP bidstream sample for BidScope's worked example.
 
+NOTE: `bidscope -generate` (Go, built in) supersedes this script for general
+use — same idea, configurable mix (`-profile clean|mixed|dirty`), no Python
+needed. This script is kept so the README's worked example stays
+byte-reproducible.
+
 Everything here is fake: TEST-NET IPs (198.51.100.0/24, 203.0.113.0/24),
 example.com inventory, random identifiers. Deterministic (seed 7), so the
 README's worked example reproduces byte-for-byte.

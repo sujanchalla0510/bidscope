@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -126,14 +127,49 @@ func TestNoInputFailsLoudly(t *testing.T) {
 	}
 }
 
-func TestGenerateNotYet(t *testing.T) {
-	// --generate is parsed but lands in M7.
-	code, _, stderr := runForTest(t, "-generate")
-	if code != 1 {
-		t.Fatalf("exit code = %d, want 1", code)
+func TestGenerateEmitsJSONL(t *testing.T) {
+	// -generate emits N valid JSONL bid requests to stdout.
+	code, stdout, _ := runForTest(t, "-generate", "-n", "50", "-seed", "7", "-profile", "mixed")
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
 	}
-	if !strings.Contains(stderr, "M7") {
-		t.Fatalf("stderr = %q, want M7 notice", stderr)
+	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+	if len(lines) != 50 {
+		t.Fatalf("emitted %d lines, want 50", len(lines))
+	}
+	for _, line := range lines {
+		var req struct {
+			ID  string `json:"id"`
+			Imp []any  `json:"imp"`
+		}
+		if err := json.Unmarshal([]byte(line), &req); err != nil {
+			t.Fatalf("invalid JSON line: %v", err)
+		}
+		if req.ID == "" || len(req.Imp) == 0 {
+			t.Fatalf("line missing id/imp: %s", line)
+		}
+	}
+}
+
+func TestGenerateDeterministic(t *testing.T) {
+	_, a, _ := runForTest(t, "-generate", "-n", "50", "-seed", "7")
+	_, b, _ := runForTest(t, "-generate", "-n", "50", "-seed", "7")
+	if a != b {
+		t.Fatal("same -seed produced different output")
+	}
+	_, c, _ := runForTest(t, "-generate", "-n", "50", "-seed", "8")
+	if a == c {
+		t.Fatal("different -seed produced identical output")
+	}
+}
+
+func TestGenerateBadProfile(t *testing.T) {
+	code, _, stderr := runForTest(t, "-generate", "-profile", "bogus")
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr, "unknown profile") {
+		t.Fatalf("stderr = %q, want unknown-profile notice", stderr)
 	}
 }
 
