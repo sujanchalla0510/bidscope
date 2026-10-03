@@ -38,6 +38,9 @@ git clone https://github.com/sujanchalla0510/bidscope
 cd bidscope
 go build -o bidscope ./cmd/bidscope
 
+# no data? generate a synthetic sample and profile it in one pipe
+./bidscope -generate | ./bidscope -in - -qps 120000 -html report.html
+
 # reproduce the worked example below (fully synthetic sample)
 python3 examples/generate_sample.py > ssp-sample.jsonl
 ./bidscope -in ssp-sample.jsonl -qps 120000 -html report.html
@@ -46,6 +49,11 @@ python3 examples/generate_sample.py > ssp-sample.jsonl
 Flags: `-in` (JSONL file, `.gz` ok, `-` for stdin) · `-qps` (stated input QPS
 — scales the biddable share into absolute QPS) · `-html` (self-contained HTML
 report) · `-json` (machine-readable output) · `-version`.
+`-generate` emits a synthetic bidstream sample instead of reading input:
+`-n` (how many, default 1000), `-seed` (deterministic; same seed = same
+bytes, default 7), `-profile` (`clean` · `mixed` · `dirty`). `dirty` is a
+junk SSP that trips every quality gate — useful for demos and for testing
+your own integrations against BidScope.
 
 ## Worked example
 
@@ -119,10 +127,10 @@ the box. Every fixture and sample in this repo is synthetic.
 
 ## Roadmap
 
-- **v0.2**: web tester (Go→WASM, local-first), GitHub Action, MCP server
-- **Later**: synthetic generator (`bidscope -generate`), drift mode (A/B
-  diff), bid-response pairing (bidder mode), schain ↔ ads.txt/sellers.json
-  cross-check, live tap, OpenRTB 3.0
+- **v0.2**: web tester (Go→WASM, local-first — reuses `bidscope -generate`
+  as its "try sample data" source), GitHub Action, MCP server
+- **Later**: drift mode (A/B diff), bid-response pairing (bidder mode),
+  schain ↔ ads.txt/sellers.json cross-check, live tap, OpenRTB 3.0
 
 ## License
 

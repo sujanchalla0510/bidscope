@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/sujanchalla0510/bidscope/internal/biddable"
+	"github.com/sujanchalla0510/bidscope/internal/generate"
 	"github.com/sujanchalla0510/bidscope/internal/ingest"
 	"github.com/sujanchalla0510/bidscope/internal/mix"
 	"github.com/sujanchalla0510/bidscope/internal/quality"
@@ -30,6 +31,9 @@ type Config struct {
 	JSONOutput  bool
 	Input       string
 	Generate    bool
+	GenN        int
+	GenSeed     int64
+	GenProfile  string
 	InputQPS    float64
 	HTMLPath    string
 }
@@ -44,6 +48,9 @@ func Parse(args []string) (Config, error) {
 	fs.BoolVar(&cfg.JSONOutput, "json", false, "emit machine-readable JSON output")
 	fs.StringVar(&cfg.Input, "in", "", "path to a JSONL file of OpenRTB bid requests ('-' for stdin)")
 	fs.BoolVar(&cfg.Generate, "generate", false, "emit a synthetic bidstream sample instead of reading input")
+	fs.IntVar(&cfg.GenN, "n", generate.DefaultN, "synthetic requests to emit with -generate")
+	fs.Int64Var(&cfg.GenSeed, "seed", generate.DefaultSeed, "RNG seed for -generate (same seed = same bytes)")
+	fs.StringVar(&cfg.GenProfile, "profile", string(generate.ProfileMixed), "synthetic mix: clean, mixed, or dirty")
 	fs.Float64Var(&cfg.InputQPS, "qps", 0, "stated input QPS the sample was drawn from (scales the biddable estimate)")
 	fs.StringVar(&cfg.HTMLPath, "html", "", "write a self-contained HTML report to this path")
 	if err := fs.Parse(args); err != nil {
@@ -60,11 +67,17 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  bidscope -in requests.jsonl       profile a JSONL sample of bid requests")
 	fmt.Fprintln(w, "  bidscope -in requests.jsonl.gz    same, gzip-compressed")
 	fmt.Fprintln(w, "  bidscope -generate                emit a synthetic bidstream sample (try it with no data)")
+	fmt.Fprintln(w, "  bidscope -generate -profile dirty | bidscope -in -")
+	fmt.Fprintln(w, "                                    profile a junk stream: every quality gate trips")
 	fmt.Fprintln(w, "  bidscope -version                 print the version")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Options:")
 	fmt.Fprintln(w, "  -in string    input file ('-' reads stdin)")
 	fmt.Fprintln(w, "  -generate     emit synthetic traffic instead of reading input")
+	fmt.Fprintln(w, "  -n int        synthetic requests to emit (default 1000)")
+	fmt.Fprintln(w, "  -seed int     RNG seed for -generate; same seed gives the same bytes (default 7)")
+	fmt.Fprintln(w, "  -profile string")
+	fmt.Fprintln(w, "                synthetic mix: clean (healthy SSP), mixed (default), dirty (junk)")
 	fmt.Fprintln(w, "  -json         machine-readable JSON output")
 	fmt.Fprintln(w, "  -qps float    stated input QPS the sample was drawn from (scales the biddable estimate)")
 	fmt.Fprintln(w, "  -html string  write a self-contained HTML report to this path")
@@ -97,9 +110,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runProfile(cfg, stdout, stderr)
 	}
 	if cfg.Generate {
-		// M7 synthetic generator: flag is parsed, engine not built yet.
-		fmt.Fprintln(stderr, "bidscope: --generate lands in M7 (synthetic generator).")
-		return 1
+		return runGenerate(cfg, stdout, stderr)
 	}
 
 	// No input and no --generate: nothing to do. Fail loudly (exit 1) so
@@ -107,6 +118,27 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stderr, "bidscope: no input — pass -in <file.jsonl> (or '-' for stdin).")
 	usage(stderr)
 	return 1
+}
+
+// runGenerate emits a synthetic bidstream sample as JSONL to stdout. It is
+// the zero-setup way to see every analyzer: pipe it straight into the
+// profiler (`bidscope -generate | bidscope -in -`). Exit 0 on success,
+// 2 on flag misuse.
+func runGenerate(cfg Config, stdout, stderr io.Writer) int {
+	gcfg := generate.Config{
+		N:       cfg.GenN,
+		Seed:    cfg.GenSeed,
+		Profile: generate.Profile(cfg.GenProfile),
+	}
+	if err := gcfg.Validate(); err != nil {
+		fmt.Fprintf(stderr, "bidscope: %v\n", err)
+		return 2
+	}
+	if err := generate.New(gcfg).Emit(stdout); err != nil {
+		fmt.Fprintf(stderr, "bidscope: generate: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 // profileResult is the M3+M4+M5+M6 profiling summary: ingest accounting,
