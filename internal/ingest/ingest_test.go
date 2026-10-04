@@ -172,3 +172,34 @@ func TestCloseIdempotent(t *testing.T) {
 		t.Fatalf("second close: %v", err)
 	}
 }
+
+func TestNewStreamReader(t *testing.T) {
+	// Reader-based streams behave exactly like file-based ones: valid lines
+	// parse, malformed lines surface as *LineError, and Stats accounts.
+	in := `{"id":"ns-1","imp":[]}` + "\n" + "junk\n" + `{"id":"ns-2","imp":[]}` + "\n"
+	s := NewStream(strings.NewReader(in))
+	n := 0
+	for {
+		br, err := s.Next()
+		switch {
+		case err == nil:
+			n++
+			if br.ID != "ns-1" && br.ID != "ns-2" {
+				t.Errorf("unexpected id %q", br.ID)
+			}
+		case AsLineError(err):
+			continue
+		case errors.Is(err, io.EOF):
+			goto done
+		default:
+			t.Fatalf("Next: %v", err)
+		}
+	}
+done:
+	if n != 2 {
+		t.Errorf("parsed %d requests, want 2", n)
+	}
+	if st := s.Stats(); st.Parsed != 2 || st.Malformed != 1 || st.Lines != 3 {
+		t.Errorf("Stats = %+v, want Parsed=2 Malformed=1 Lines=3", st)
+	}
+}

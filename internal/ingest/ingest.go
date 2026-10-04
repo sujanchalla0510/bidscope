@@ -53,6 +53,14 @@ type Stream struct {
 	closed  bool
 }
 
+// NewStream returns a Stream reading JSONL bid requests from r (plain,
+// never gzip — callers sniffing compression should decompress first).
+func NewStream(r io.Reader) *Stream {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024) // long lines happen; cap at 16MB
+	return &Stream{scanner: sc, version: map[string]int{}}
+}
+
 // Open prepares a Stream for path ("-" reads stdin). Gzip is detected from
 // the ".gz" suffix. The file is not read until the first Next call.
 func Open(path string) (*Stream, error) {
@@ -79,9 +87,9 @@ func Open(path string) (*Stream, error) {
 			closer = multiCloser{[]io.Closer{gz, f}}
 		}
 	}
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024) // long lines happen; cap at 16MB
-	return &Stream{scanner: sc, closer: closer, version: map[string]int{}}, nil
+	s := NewStream(r)
+	s.closer = closer
+	return s, nil
 }
 
 // Next returns the next bid request, a *LineError for a malformed line

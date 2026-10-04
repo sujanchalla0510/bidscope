@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BidScope Web Tester — profile bidstreams in your browser</title>
+<meta name="description" content="Score SSP supply quality from OpenRTB bid request samples. Runs entirely in your browser via WebAssembly — nothing is uploaded.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>BidScope <span class="tag">web tester</span></h1>
+    <p class="lede">Score SSP supply quality from OpenRTB bid request samples.
+      The profiler runs as WebAssembly <strong>entirely in your browser</strong> —
+      your data never leaves this page. No uploads, no servers.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="panel" id="input-panel">
+    <h2>1 · Get a sample</h2>
+    <div class="row">
+      <button id="btn-sample" class="btn primary">Try sample data</button>
+      <label class="filebtn">Load a file <input type="file" id="file" accept=".jsonl,.json,.gz,.txt"></label>
+      <span class="hint">one OpenRTB bid request per line (JSONL); .gz stays local too</span>
+    </div>
+    <textarea id="jsonl" rows="10" spellcheck="false"
+      placeholder="Paste JSONL bid requests here… or hit “Try sample data” to generate a synthetic SSP sample in one click."></textarea>
+    <div class="row">
+      <label>Stated QPS (optional)
+        <input type="number" id="qps" min="0" step="1" placeholder="e.g. 50000">
+      </label>
+      <button id="btn-profile" class="btn primary">Profile</button>
+      <span id="status" class="status" aria-live="polite">loading the profiler…</span>
+    </div>
+  </section>
+
+  <section class="panel hidden" id="results-panel">
+    <h2>2 · Results</h2>
+    <div id="cards" class="cards"></div>
+
+    <h3>Signal completeness</h3>
+    <p class="sub">Share of requests carrying each signal a DSP needs to bid well.</p>
+    <table id="tbl-signals"><thead><tr><th>Signal</th><th>Present</th><th>Fill rate</th></tr></thead><tbody></tbody></table>
+
+    <h3>Biddable share</h3>
+    <p class="sub">Requests passing every quality gate. A request only counts when it clears all of them.</p>
+    <table id="tbl-gates"><thead><tr><th>Gate</th><th>Failed</th><th>Fail rate</th></tr></thead><tbody></tbody></table>
+
+    <h3>Inventory mix</h3>
+    <div id="mix" class="grid2"></div>
+
+    <h3>Quality signals</h3>
+    <div id="quality" class="grid2"></div>
+
+    <h3>Red flags</h3>
+    <div id="flags"></div>
+  </section>
+
+  <footer>
+    <p>BidScope is open source (Apache-2.0):
+      <a href="https://github.com/sujanchalla0510/bidscope">github.com/sujanchalla0510/bidscope</a> ·
+      the same engine powers the <code>bidscope</code> CLI. Scores here are identical to CLI output for the same input.</p>
+  </footer>
+</main>
+
+<script src="wasm_exec.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
