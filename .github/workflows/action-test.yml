@@ -34,6 +34,7 @@ jobs:
         with:
           input: clean-sample.jsonl
           qps: "10000"
+          artifact-name: bidscope-report-clean
 
       - name: Assert clean-sample outputs
         shell: bash
@@ -53,6 +54,7 @@ jobs:
         with:
           input: dirty-sample.jsonl
           html-report: ""
+          artifact-name: bidscope-report-dirty-gate
 
       - name: Assert dirty sample trips the gate
         shell: bash
@@ -67,6 +69,7 @@ jobs:
           input: dirty-sample.jsonl
           fail-on-red-flags: "false"
           min-signal-score: "0"
+          artifact-name: bidscope-report-dirty-off
 
       - name: Assert dirty-sample outputs with gates off
         shell: bash

@@ -81,7 +81,8 @@ sample from each SSP, or on pull requests that touch traffic shaping:
 
 Outputs: `signal-score`, `biddable-share`, `biddable-qps`,
 `red-flag-count`, `requests-parsed`, `json-report`, `html-report`. The JSON
-and HTML reports are uploaded as the `bidscope-report` artifact. The job
+and HTML reports are uploaded as an artifact (name via the `artifact-name`
+input, default `bidscope-report`). The job
 fails when any red flag is raised or the signal score falls below
 `min-signal-score`.
 

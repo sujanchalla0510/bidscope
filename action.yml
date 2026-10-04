@@ -36,6 +36,10 @@ inputs:
     description: "Go toolchain version used to build BidScope from source."
     required: false
     default: "1.27"
+  artifact-name:
+    description: "Name of the uploaded report artifact. Must be unique per workflow run."
+    required: false
+    default: "bidscope-report"
 
 outputs:
   signal-score:
@@ -129,7 +133,7 @@ runs:
     - name: Upload reports
       uses: actions/upload-artifact@v4
       with:
-        name: bidscope-report
+        name: ${{ inputs.artifact-name }}
         path: |
           ${{ inputs.json-output }}
           ${{ inputs.html-report }}
