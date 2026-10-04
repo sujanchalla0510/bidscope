@@ -1,0 +1,152 @@
+name: "BidScope — SSP supply-quality gate"
+description: >-
+  Profile an OpenRTB bidstream sample with BidScope (signal completeness,
+  inventory mix, quality signals, biddable-QPS estimate) and fail the job
+  when the supply raises red flags or the signal score falls below a floor.
+author: "sujanchalla0510"
+branding:
+  icon: "activity"
+  color: "blue"
+
+inputs:
+  input:
+    description: "Path to a JSONL sample of OpenRTB bid requests ('.gz' ok), relative to the repository root."
+    required: true
+  qps:
+    description: "Stated QPS the sample was drawn from — scales the biddable share into absolute QPS. Optional."
+    required: false
+    default: ""
+  json-output:
+    description: "Where to write the machine-readable JSON profile."
+    required: false
+    default: "bidscope-report.json"
+  html-report:
+    description: "Where to write the self-contained HTML report. Empty disables it."
+    required: false
+    default: "bidscope-report.html"
+  fail-on-red-flags:
+    description: "Fail the step when BidScope raises any red flag (any severity)."
+    required: false
+    default: "true"
+  min-signal-score:
+    description: "Fail the step when the composite signal score (0-100) falls below this. 0 disables."
+    required: false
+    default: "0"
+  go-version:
+    description: "Go toolchain version used to build BidScope from source."
+    required: false
+    default: "1.27"
+
+outputs:
+  signal-score:
+    description: "Composite signal-completeness score, 0-100."
+    value: ${{ steps.extract.outputs.signal-score }}
+  biddable-share:
+    description: "Share of requests passing every biddable gate, 0-1."
+    value: ${{ steps.extract.outputs.biddable-share }}
+  biddable-qps:
+    description: "Estimated biddable QPS (input QPS x share); 0 when no QPS was passed."
+    value: ${{ steps.extract.outputs.biddable-qps }}
+  red-flag-count:
+    description: "Number of red flags raised by the quality engine."
+    value: ${{ steps.extract.outputs.red-flag-count }}
+  requests-parsed:
+    description: "Bid requests successfully parsed from the sample."
+    value: ${{ steps.extract.outputs.requests-parsed }}
+  json-report:
+    description: "Path of the written JSON report."
+    value: ${{ steps.extract.outputs.json-report }}
+  html-report:
+    description: "Path of the written HTML report (empty when disabled)."
+    value: ${{ steps.extract.outputs.html-report }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: true
+
+    - name: Build BidScope
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: go build -o "${{ runner.temp }}/bidscope" ./cmd/bidscope
+
+    - name: Profile sample
+      id: profile
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        BIDSCOPE="${{ runner.temp }}/bidscope"
+        ARGS=(-in "${{ inputs.input }}" -json)
+        if [ -n "${{ inputs.qps }}" ]; then
+          ARGS+=(-qps "${{ inputs.qps }}")
+        fi
+        if [ -n "${{ inputs.html-report }}" ]; then
+          ARGS+=(-html "${{ inputs.html-report }}")
+        fi
+        # -json is a bare flag (the JSON profile goes to stdout): keep it
+        # flag-valued, because Go's flag parser stops at the first
+        # positional argument.
+        "$BIDSCOPE" "${ARGS[@]}" > "${{ inputs.json-output }}"
+
+    - name: Extract outputs
+      id: extract
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        python3 - "${{ inputs.json-output }}" "${{ inputs.html-report }}" <<'EOF' >> "$GITHUB_OUTPUT"
+        import json, sys
+        with open(sys.argv[1]) as f:
+            res = json.load(f)
+        out = {
+            "signal-score": "%.1f" % res["signals"]["score"],
+            "biddable-share": "%.4f" % res["biddable"]["biddable_share"],
+            "biddable-qps": "%.1f" % res["biddable"]["biddable_qps"],
+            "red-flag-count": str(len(res["quality"]["red_flags"])),
+            "requests-parsed": str(res["parsed"]),
+            "json-report": sys.argv[1],
+            "html-report": sys.argv[2],
+        }
+        for k, v in out.items():
+            print("%s=%s" % (k, v))
+        EOF
+        # Human-readable summary for the run log (kept out of GITHUB_OUTPUT).
+        python3 - "${{ inputs.json-output }}" <<'EOF'
+        import json, sys
+        with open(sys.argv[1]) as f:
+            res = json.load(f)
+        print("BidScope profile of '%s':" % res["input"])
+        print("  requests parsed: %d" % res["parsed"])
+        print("  signal score:    %.1f/100" % res["signals"]["score"])
+        print("  biddable share:  %.4f" % res["biddable"]["biddable_share"])
+        print("  biddable QPS:    %.1f" % res["biddable"]["biddable_qps"])
+        print("  red flags:       %d" % len(res["quality"]["red_flags"]))
+        EOF
+
+    - name: Upload reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: bidscope-report
+        path: |
+          ${{ inputs.json-output }}
+          ${{ inputs.html-report }}
+        if-no-files-found: warn
+
+    - name: Quality gates
+      shell: bash
+      run: |
+        FLAGS="${{ steps.extract.outputs.red-flag-count }}"
+        SCORE="${{ steps.extract.outputs.signal-score }}"
+        if [ "${{ inputs.fail-on-red-flags }}" = "true" ] && [ "$FLAGS" -gt 0 ]; then
+          echo "BidScope raised $FLAGS red flag(s) on '${{ inputs.input }}' — see the bidscope-report artifact."
+          exit 1
+        fi
+        MIN="${{ inputs.min-signal-score }}"
+        if awk -v s="$SCORE" -v m="$MIN" 'BEGIN { exit !(m > 0 && s < m) }'; then
+          echo "Signal score $SCORE is below the floor of $MIN."
+          exit 1
+        fi
+        echo "BidScope gates passed: signal score $SCORE/100, $FLAGS red flag(s)."

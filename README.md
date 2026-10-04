@@ -63,6 +63,28 @@ bytes, default 7), `-profile` (`clean` · `mixed` · `dirty`). `dirty` is a
 junk SSP that trips every quality gate — useful for demos and for testing
 your own integrations against BidScope.
 
+## GitHub Action
+
+Run BidScope as a supply-quality gate in CI — e.g. nightly against a fresh
+sample from each SSP, or on pull requests that touch traffic shaping:
+
+```yaml
+- name: BidScope SSP gate
+  id: bidscope
+  uses: sujanchalla0510/bidscope@v0.1.0
+  with:
+    input: ssp-sample.jsonl   # JSONL (or .gz) of OpenRTB bid requests
+    qps: "120000"             # stated sample QPS (optional)
+    min-signal-score: "60"    # fail below this score (optional)
+    fail-on-red-flags: "true" # fail on any red flag (default true)
+```
+
+Outputs: `signal-score`, `biddable-share`, `biddable-qps`,
+`red-flag-count`, `requests-parsed`, `json-report`, `html-report`. The JSON
+and HTML reports are uploaded as the `bidscope-report` artifact. The job
+fails when any red flag is raised or the signal score falls below
+`min-signal-score`.
+
 ## Worked example
 
 A synthetic 1,000-request SSP sample (seeded generator above — TEST-NET IPs,
@@ -138,7 +160,9 @@ the box. Every fixture and sample in this repo is synthetic.
 - **v0.2**: ✅ web tester — live at
   [sujanchalla0510.github.io/bidscope](https://sujanchalla0510.github.io/bidscope/)
   (Go→WASM, local-first; reuses `-generate` as its "try sample data" source);
-  next: GitHub Action, MCP server
+  ✅ GitHub Action (`uses: sujanchalla0510/bidscope@v0.1.0`) — SSP
+  supply-quality gate with red-flag/score-floor failure, JSON+HTML artifacts;
+  next: MCP server
 - **Later**: drift mode (A/B diff), bid-response pairing (bidder mode),
   schain ↔ ads.txt/sellers.json cross-check, live tap, OpenRTB 3.0
 

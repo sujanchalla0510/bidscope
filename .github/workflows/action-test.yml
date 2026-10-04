@@ -1,0 +1,75 @@
+# Self-test for the BidScope GitHub Action (action.yml): generates synthetic
+# samples with the CLI itself and runs the local action against them, so the
+# action's build/profile/extract/gate steps are exercised on every PR.
+name: action-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache: true
+
+      - name: Build BidScope
+        run: go build -o bidscope ./cmd/bidscope
+
+      - name: Generate synthetic samples
+        run: |
+          ./bidscope -generate -profile clean -n 200 -seed 7 > clean-sample.jsonl
+          ./bidscope -generate -profile dirty -n 200 -seed 7 > dirty-sample.jsonl
+          wc -l clean-sample.jsonl dirty-sample.jsonl
+
+      - name: Profile clean sample
+        id: clean
+        uses: ./
+        with:
+          input: clean-sample.jsonl
+          qps: "10000"
+
+      - name: Assert clean-sample outputs
+        shell: bash
+        run: |
+          [ "${{ steps.clean.outputs.requests-parsed }}" = "200" ] || { echo "parsed=${{ steps.clean.outputs.requests-parsed }}, want 200"; exit 1; }
+          [ "${{ steps.clean.outputs.red-flag-count }}" = "0" ] || { echo "red-flag-count=${{ steps.clean.outputs.red-flag-count }}, want 0"; exit 1; }
+          [ -n "${{ steps.clean.outputs.signal-score }}" ] || { echo "signal-score missing"; exit 1; }
+          [ -n "${{ steps.clean.outputs.biddable-share }}" ] || { echo "biddable-share missing"; exit 1; }
+          test -f "${{ steps.clean.outputs.json-report }}" || { echo "json report missing"; exit 1; }
+          test -f "${{ steps.clean.outputs.html-report }}" || { echo "html report missing"; exit 1; }
+          echo "clean sample: score ${{ steps.clean.outputs.signal-score }}, biddable share ${{ steps.clean.outputs.biddable-share }}"
+
+      - name: Profile dirty sample (expect failure, gates on)
+        id: dirty-gate
+        uses: ./
+        continue-on-error: true
+        with:
+          input: dirty-sample.jsonl
+          html-report: ""
+
+      - name: Assert dirty sample trips the gate
+        shell: bash
+        run: |
+          [ "${{ steps.dirty-gate.outcome }}" = "failure" ] || { echo "dirty sample should have failed the gate, got ${{ steps.dirty-gate.outcome }}"; exit 1; }
+          echo "dirty sample correctly failed: ${{ steps.dirty-gate.outputs.red-flag-count }} red flag(s)"
+
+      - name: Profile dirty sample (gates off)
+        id: dirty-off
+        uses: ./
+        with:
+          input: dirty-sample.jsonl
+          fail-on-red-flags: "false"
+          min-signal-score: "0"
+
+      - name: Assert dirty-sample outputs with gates off
+        shell: bash
+        run: |
+          [ "${{ steps.dirty-off.outputs.red-flag-count }}" != "0" ] || { echo "dirty sample should raise red flags"; exit 1; }
+          echo "dirty sample: ${{ steps.dirty-off.outputs.red-flag-count }} red flag(s), score ${{ steps.dirty-off.outputs.signal-score }}"
