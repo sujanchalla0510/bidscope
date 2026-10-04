@@ -12,6 +12,14 @@ every DSP. BidScope makes it a one-liner.
 
 Supports OpenRTB 2.5 and 2.6 (auto-detected). Apache-2.0.
 
+## Web tester
+
+No install, no data handoff: **[sujanchalla0510.github.io/bidscope](https://sujanchalla0510.github.io/bidscope/)**
+runs the profiler as WebAssembly **entirely in your browser** — paste a JSONL
+sample (or generate a synthetic SSP stream in one click) and get the full
+report. Nothing is uploaded; scores are identical to the CLI for the same
+input.
+
 ## What it measures
 
 | Engine | Answers |
@@ -127,8 +135,10 @@ the box. Every fixture and sample in this repo is synthetic.
 
 ## Roadmap
 
-- **v0.2**: web tester (Go→WASM, local-first — reuses `bidscope -generate`
-  as its "try sample data" source), GitHub Action, MCP server
+- **v0.2**: ✅ web tester — live at
+  [sujanchalla0510.github.io/bidscope](https://sujanchalla0510.github.io/bidscope/)
+  (Go→WASM, local-first; reuses `-generate` as its "try sample data" source);
+  next: GitHub Action, MCP server
 - **Later**: drift mode (A/B diff), bid-response pairing (bidder mode),
   schain ↔ ads.txt/sellers.json cross-check, live tap, OpenRTB 3.0
 

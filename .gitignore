@@ -10,3 +10,7 @@ coverage.html
 
 # Build output
 dist/
+
+# Web tester build artifacts (rebuilt by `make web` / CI)
+web/site/bidscope.wasm
+web/site/wasm_exec.js

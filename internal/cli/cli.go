@@ -15,13 +15,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sujanchalla0510/bidscope/internal/biddable"
 	"github.com/sujanchalla0510/bidscope/internal/generate"
 	"github.com/sujanchalla0510/bidscope/internal/ingest"
 	"github.com/sujanchalla0510/bidscope/internal/mix"
-	"github.com/sujanchalla0510/bidscope/internal/quality"
+	"github.com/sujanchalla0510/bidscope/internal/profile"
 	"github.com/sujanchalla0510/bidscope/internal/report"
-	"github.com/sujanchalla0510/bidscope/internal/signals"
 	"github.com/sujanchalla0510/bidscope/internal/version"
 )
 
@@ -141,26 +139,9 @@ func runGenerate(cfg Config, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// profileResult is the M3+M4+M5+M6 profiling summary: ingest accounting,
-// the OpenRTB version mix, the signal-completeness report with its
-// composite signal score, the inventory mix analysis, the quality-signal
-// report, and the biddable-QPS estimate.
-type profileResult struct {
-	Input     string          `json:"input"`
-	Lines     int             `json:"lines"`
-	Parsed    int             `json:"parsed"`
-	Blank     int             `json:"blank"`
-	Malformed int             `json:"malformed"`
-	Versions  map[string]int  `json:"versions"`
-	Signals   signals.Report  `json:"signals"`
-	Mix       mix.Report      `json:"mix"`
-	Quality   quality.Report  `json:"quality"`
-	Biddable  biddable.Report `json:"biddable"`
-}
-
-// runProfile streams the input through the ingest reader, folds every bid
-// request into the signal-completeness engine, and reports the results.
-// Exit 0 on success, 1 on read failure.
+// runProfile streams the input through every analyzer and reports the
+// results. The profiling core lives in internal/profile so the CLI and the
+// web tester always agree. Exit 0 on success, 1 on read failure.
 func runProfile(cfg Config, stdout, stderr io.Writer) int {
 	s, err := ingest.Open(cfg.Input)
 	if err != nil {
@@ -169,40 +150,10 @@ func runProfile(cfg Config, stdout, stderr io.Writer) int {
 	}
 	defer s.Close()
 
-	eng := signals.NewEngine()
-	mixEng := mix.NewEngine()
-	qEng := quality.NewEngine()
-	bEng := biddable.NewEngine()
-	for {
-		br, err := s.Next()
-		switch {
-		case err == nil:
-			eng.Add(br)
-			mixEng.Add(br)
-			qEng.Add(br)
-			bEng.Add(br)
-		case errors.Is(err, io.EOF):
-			goto done
-		case ingest.AsLineError(err):
-			continue // malformed lines are skipped; Stats keeps count
-		default:
-			fmt.Fprintf(stderr, "bidscope: %v\n", err)
-			return 1
-		}
-	}
-done:
-	st := s.Stats()
-	res := profileResult{
-		Input:     cfg.Input,
-		Lines:     st.Lines,
-		Parsed:    st.Parsed,
-		Blank:     st.Blank,
-		Malformed: st.Malformed,
-		Versions:  s.VersionMix(),
-		Signals:   eng.Report(),
-		Mix:       mixEng.Report(),
-		Quality:   qEng.Report(),
-		Biddable:  bEng.Report(cfg.InputQPS),
+	res, err := profile.Run(s, cfg.Input, cfg.InputQPS)
+	if err != nil {
+		fmt.Fprintf(stderr, "bidscope: %v\n", err)
+		return 1
 	}
 
 	var b strings.Builder
@@ -229,7 +180,7 @@ done:
 }
 
 // writeTextReport renders the human-readable profile into b.
-func writeTextReport(res profileResult, b *strings.Builder) {
+func writeTextReport(res profile.Result, b *strings.Builder) {
 	fmt.Fprintf(b, "bidscope: parsed %d bid request(s) from %s", res.Parsed, res.Input)
 	switch {
 	case res.Malformed > 0 && res.Blank > 0:
@@ -315,7 +266,7 @@ func writeTextReport(res profileResult, b *strings.Builder) {
 }
 
 // reportData converts a profile result into the report package's input.
-func reportData(res profileResult) report.Data {
+func reportData(res profile.Result) report.Data {
 	return report.Data{
 		Input:     res.Input,
 		Lines:     res.Lines,
@@ -332,7 +283,7 @@ func reportData(res profileResult) report.Data {
 }
 
 // writeHTMLReport renders the full profile as a self-contained HTML file.
-func writeHTMLReport(path string, res profileResult) error {
+func writeHTMLReport(path string, res profile.Result) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err

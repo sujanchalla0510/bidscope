@@ -16,6 +16,8 @@ jobs:
           cache: true
       - name: Build
         run: go build ./...
+      - name: Build WASM web tester
+        run: GOOS=js GOARCH=wasm go build -o /tmp/bidscope.wasm ./web/wasm
       - name: Vet
         run: go vet ./...
       - name: Test
